@@ -58,9 +58,7 @@ resource "azurerm_virtual_machine" "f5bigip" {
 resource "azurerm_virtual_machine_extension" "run_startup_cmd" {
     count                = length(var.azs)
     name                 = format("%s-bigip-startup-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location             = var.resourcegroup_location
-    resource_group_name  = var.resourcegroup_name
-    virtual_machine_name = azurerm_virtual_machine.f5bigip[count.index].name
+    virtual_machine_id = azurerm_virtual_machine.f5bigip[count.index].id
     publisher            = "Microsoft.OSTCExtensions"
     type                 = "CustomScriptForLinux"
     type_handler_version = "1.2"
@@ -143,7 +141,6 @@ resource "azurerm_network_interface" "mgmt-nic" {
     name                      = format("%s-mgmtnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     location                  = var.resourcegroup_location
     resource_group_name       = var.resourcegroup_name
-    network_security_group_id = azurerm_network_security_group.management_sg.id
 
     ip_configuration {
         name                          = "primary"
@@ -156,6 +153,11 @@ resource "azurerm_network_interface" "mgmt-nic" {
         Name        = format("%s-mgmtnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
         environment = var.environment
     }
+}
+resource "azurerm_network_interface_security_group_association" "mgmt-nic" {
+      count                     = length(var.azs)
+      network_interface_id      = azurerm_network_interface.mgmt-nic[count.index].id
+      network_security_group_id = azurerm_network_security_group.management_sg.id
 }
 
 # Create Application Traffic Network Security Group and rule
@@ -198,7 +200,6 @@ resource "azurerm_network_interface" "ext-nic" {
     name                      = format("%s-extnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     location                  = var.resourcegroup_location
     resource_group_name       = var.resourcegroup_name
-    network_security_group_id = azurerm_network_security_group.application_sg.id
     enable_ip_forwarding      = true
 
     ip_configuration {
@@ -228,13 +229,16 @@ resource "azurerm_network_interface" "ext-nic" {
 
     }
 }
-
+resource "azurerm_network_interface_security_group_association" "ext-nic" {
+      count                     = length(var.azs)
+      network_interface_id      = azurerm_network_interface.ext-nic[count.index].id
+      network_security_group_id = azurerm_network_security_group.application_sg.id
+}
 resource "azurerm_network_interface" "int-nic" {
     count                     = length(var.azs)
     name                      = format("%s-intnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     location                  = var.resourcegroup_location
     resource_group_name       = var.resourcegroup_name
-    network_security_group_id = azurerm_network_security_group.management_sg.id
     enable_ip_forwarding      = true
 
     ip_configuration {
@@ -249,7 +253,11 @@ resource "azurerm_network_interface" "int-nic" {
         environment    = var.environment
     }
 }
-
+resource "azurerm_network_interface_security_group_association" "int-nic" {
+  count                     = length(var.azs)
+  network_interface_id      = azurerm_network_interface.int-nic[count.index].id
+  network_security_group_id = azurerm_network_security_group.management_sg.id
+}
 # Create public IPs for BIG-IP management UI
 resource "azurerm_public_ip" "management_public_ip" {
     count               = length(var.azs)
@@ -258,7 +266,7 @@ resource "azurerm_public_ip" "management_public_ip" {
     resource_group_name = var.resourcegroup_name
     allocation_method   = "Static" # Static is required due to the use of the Standard sku
     sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    zones               = [element(var.azs,count.index)]
+    availability_zone   = element(var.azs,count.index)
 
     tags = {
         environment = var.environment
@@ -274,7 +282,7 @@ resource "azurerm_public_ip" "juiceshop_public_ip" {
     resource_group_name = var.resourcegroup_name
     allocation_method   = "Static" # Static is required due to the use of the Standard sku
     sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    zones               = [element(var.azs,count.index)]
+    availability_zone   = element(var.azs,count.index)
 
     tags = {
         environment = var.environment
@@ -289,7 +297,7 @@ resource "azurerm_public_ip" "grafana_public_ip" {
     resource_group_name = var.resourcegroup_name
     allocation_method   = "Static" # Static is required due to the use of the Standard sku
     sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    zones               = [element(var.azs,count.index)]
+    availability_zone   = element(var.azs,count.index)
 
     tags = {
         environment = var.environment

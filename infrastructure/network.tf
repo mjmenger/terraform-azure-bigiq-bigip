@@ -16,7 +16,7 @@ resource "azurerm_subnet" "management" {
     name                 = format("%s-managementsubnet-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     resource_group_name  = azurerm_resource_group.main.name
     virtual_network_name = azurerm_virtual_network.main.name
-    address_prefix       = cidrsubnet(var.cidr, 8, 10 + count.index)
+    address_prefixes     = [cidrsubnet(var.cidr, 8, 10 + count.index)]
 }
 # Create subnet
 resource "azurerm_subnet" "public" {
@@ -24,7 +24,7 @@ resource "azurerm_subnet" "public" {
     name                 = format("%s-publicsubnet-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     resource_group_name  = azurerm_resource_group.main.name
     virtual_network_name = azurerm_virtual_network.main.name
-    address_prefix       = cidrsubnet(var.cidr, 8, 20 + count.index)
+    address_prefixes     = [cidrsubnet(var.cidr, 8, 20 + count.index)]
 }
 # Create subnet
 resource "azurerm_subnet" "private" {
@@ -32,5 +32,5 @@ resource "azurerm_subnet" "private" {
     name                 = format("%s-privatesubnet-%s-%s",var.prefix,count.index,random_id.randomId.hex)
     resource_group_name  = azurerm_resource_group.main.name
     virtual_network_name = azurerm_virtual_network.main.name
-    address_prefix       = cidrsubnet(var.cidr, 8, 30 + count.index)
+    address_prefixes     = [cidrsubnet(var.cidr, 8, 30 + count.index)]
 }
