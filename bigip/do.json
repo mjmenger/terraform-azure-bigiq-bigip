@@ -1,0 +1,18 @@
+{
+    "schemaVersion": "1.0.0",
+    "class": "Device",
+    "async": true,
+    "label": "Onboard BIG-IP",
+    "Common": {
+        "class": "Tenant",
+        "dbvars": {
+            "class": "DbVariables",
+            "provision.extramb": 1000,
+            "restjavad.useextramb": true,
+            "merged.method": "slow_merge",
+            "ui.advisory.enabled": "true",
+            "ui.advisory.color": "red",
+            "ui.advisory.text": "Configuration deployed with DO & AS3. Do not make any change directly on the BIG-IP or those changes may be lost."
+        }
+    }
+}

@@ -1,79 +1,21 @@
-# Create F5 BIGIP VMs 
-resource "azurerm_virtual_machine" "f5bigip" {
-    count                        = length(var.azs)
-    name                         = format("%s-bigip-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location                     = var.resourcegroup_location #var.resourcegroup_location
-    resource_group_name          = var.resourcegroup_name
-    primary_network_interface_id = azurerm_network_interface.mgmt-nic[count.index].id
-    network_interface_ids        = [azurerm_network_interface.mgmt-nic[count.index].id, azurerm_network_interface.ext-nic[count.index].id,azurerm_network_interface.int-nic[count.index].id]
-    vm_size                      = var.instance_type
-    zones                        = [element(var.azs,count.index)]
-
-    # Uncomment this line to delete the OS disk automatically when deleting the VM
-    delete_os_disk_on_termination = true
-
-
-    # Uncomment this line to delete the data disks automatically when deleting the VM
-    delete_data_disks_on_termination = true
-
-    storage_image_reference {
-        publisher = "f5-networks"
-        offer     = var.product[var.bigip_license == "" ? 0 : 1]
-        sku       = var.image_name[var.bigip_license == "" ? 0 : 1]
-        version   = var.bigip_version[var.bigip_license == "" ? 0 : 1]
-    }
-
-    storage_os_disk {
-        name              = format("%s-bigip-osdisk-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        caching           = "ReadWrite"
-        create_option     = "FromImage"
-        managed_disk_type = "Standard_LRS"
-        disk_size_gb      = "80"
-    }
-
-    os_profile {
-        computer_name  = format("%s-bigip-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        admin_username = "azureuser"
-        admin_password = random_password.password.result
-        custom_data    = data.template_file.vm_onboard.rendered
-    }
-
-    os_profile_linux_config {
-        disable_password_authentication = false
-    }
-
-    plan {
-        name          = var.image_name[var.bigip_license == "" ? 0 : 1]
-        publisher     = "f5-networks"
-        product       = var.product[var.bigip_license == "" ? 0 : 1]
-    }
-
-    tags = {
-        Name           = format("%s-bigip-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        environment    = "${var.environment}"
-    }
+module bigip {
+    count                      = length(var.azs)
+    source                     = "F5Networks/bigip-module/azure"
+    version                    = "1.1.0"
+    prefix                     = format("%s-bigip-%s",var.prefix,"abcd")
+    f5_ssh_publickey           = file("~/.ssh/id_rsa.pub")
+    resource_group_name        = var.resourcegroup_name
+    mgmt_subnet_ids            = [{"subnet_id" =  var.management_subnet_ids[count.index], "public_ip" = true, "private_ip_primary" = "", "private_ip_secondary" = "" }]
+    mgmt_securitygroup_ids     = [azurerm_network_security_group.management_sg.id]
+    external_subnet_ids        = [{ "subnet_id" = var.public_subnet_ids[count.index], "public_ip" = true, "private_ip_primary" = "", "private_ip_secondary" = "" }]
+    external_securitygroup_ids = [azurerm_network_security_group.application_sg.id]
+    internal_subnet_ids        = [{ "subnet_id" = var.private_subnet_ids[count.index], "public_ip" = false, "private_ip_primary" = "" }]
+    internal_securitygroup_ids = [azurerm_network_security_group.management_sg.id]
+    availabilityZones          = [var.azs[count.index]]
+    tags                       = {owner = "menger"}
 }
 
-# Run Startup Script
-resource "azurerm_virtual_machine_extension" "run_startup_cmd" {
-    count                = length(var.azs)
-    name                 = format("%s-bigip-startup-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    virtual_machine_id = azurerm_virtual_machine.f5bigip[count.index].id
-    publisher            = "Microsoft.OSTCExtensions"
-    type                 = "CustomScriptForLinux"
-    type_handler_version = "1.2"
 
-    settings = <<SETTINGS
-        {
-            "commandToExecute": "bash /var/lib/waagent/CustomData"
-        }
-    SETTINGS
-
-    tags = {
-        Name           = format("%s-bigip-startup-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        environment    = var.environment
-    }
-}
 
 
 # Create Network Security Group and rule
@@ -135,30 +77,6 @@ resource "azurerm_network_security_group" "management_sg" {
     }
 }
 
-# Create interfaces for the BIGIPs 
-resource "azurerm_network_interface" "mgmt-nic" {
-    count                     = length(var.azs)
-    name                      = format("%s-mgmtnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location                  = var.resourcegroup_location
-    resource_group_name       = var.resourcegroup_name
-
-    ip_configuration {
-        name                          = "primary"
-        subnet_id                     = var.management_subnet_ids[count.index]
-        private_ip_address_allocation = "Dynamic"
-        public_ip_address_id          = azurerm_public_ip.management_public_ip[count.index].id
-    }
-
-    tags = {
-        Name        = format("%s-mgmtnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        environment = var.environment
-    }
-}
-resource "azurerm_network_interface_security_group_association" "mgmt-nic" {
-      count                     = length(var.azs)
-      network_interface_id      = azurerm_network_interface.mgmt-nic[count.index].id
-      network_security_group_id = azurerm_network_security_group.management_sg.id
-}
 
 # Create Application Traffic Network Security Group and rule
 resource "azurerm_network_security_group" "application_sg" {
@@ -192,130 +110,5 @@ resource "azurerm_network_security_group" "application_sg" {
 
     tags = {
         environment = var.environment
-    }
-}
-
-resource "azurerm_network_interface" "ext-nic" {
-    count                     = length(var.azs)
-    name                      = format("%s-extnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location                  = var.resourcegroup_location
-    resource_group_name       = var.resourcegroup_name
-    enable_ip_forwarding      = true
-
-    ip_configuration {
-        name                          = "primary"
-        subnet_id                     = var.public_subnet_ids[count.index]
-        private_ip_address_allocation = "Dynamic"
-        primary                       = true
-    }
-
-    ip_configuration {
-        name                          = "juiceshop"
-        subnet_id                     = var.public_subnet_ids[count.index]
-        private_ip_address_allocation = "Dynamic"
-        public_ip_address_id          = azurerm_public_ip.juiceshop_public_ip[count.index].id
-}
-
-    ip_configuration {
-        name                          = "grafana"
-        subnet_id                     = var.public_subnet_ids[count.index]
-        private_ip_address_allocation = "Dynamic"
-        public_ip_address_id          = azurerm_public_ip.grafana_public_ip[count.index].id
-    }
-
-    tags = {
-        Name           = format("%s-extnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        environment    = var.environment
-
-    }
-}
-resource "azurerm_network_interface_security_group_association" "ext-nic" {
-      count                     = length(var.azs)
-      network_interface_id      = azurerm_network_interface.ext-nic[count.index].id
-      network_security_group_id = azurerm_network_security_group.application_sg.id
-}
-resource "azurerm_network_interface" "int-nic" {
-    count                     = length(var.azs)
-    name                      = format("%s-intnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location                  = var.resourcegroup_location
-    resource_group_name       = var.resourcegroup_name
-    enable_ip_forwarding      = true
-
-    ip_configuration {
-        name                          = "primary"
-        subnet_id                     = var.private_subnet_ids[count.index]
-        private_ip_address_allocation = "Dynamic"
-        primary                       = true
-    }
-
-    tags = {
-        Name           = format("%s-intnic-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-        environment    = var.environment
-    }
-}
-resource "azurerm_network_interface_security_group_association" "int-nic" {
-  count                     = length(var.azs)
-  network_interface_id      = azurerm_network_interface.int-nic[count.index].id
-  network_security_group_id = azurerm_network_security_group.management_sg.id
-}
-# Create public IPs for BIG-IP management UI
-resource "azurerm_public_ip" "management_public_ip" {
-    count               = length(var.azs)
-    name                = format("%s-bigip-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location            = var.resourcegroup_location
-    resource_group_name = var.resourcegroup_name
-    allocation_method   = "Static" # Static is required due to the use of the Standard sku
-    sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    availability_zone   = element(var.azs,count.index)
-
-    tags = {
-        environment = var.environment
-    }
-}
-
-
-# Create public IPs for JuiceShop
-resource "azurerm_public_ip" "juiceshop_public_ip" {
-    count               = length(var.azs)
-    name                = format("%s-juiceshop-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location            = var.resourcegroup_location
-    resource_group_name = var.resourcegroup_name
-    allocation_method   = "Static" # Static is required due to the use of the Standard sku
-    sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    availability_zone   = element(var.azs,count.index)
-
-    tags = {
-        environment = var.environment
-    }
-}
-
-# Create public IPs for Grafana
-resource "azurerm_public_ip" "grafana_public_ip" {
-    count               = length(var.azs)
-    name                = format("%s-grafana-%s-%s",var.prefix,count.index,random_id.randomId.hex)
-    location            = var.resourcegroup_location
-    resource_group_name = var.resourcegroup_name
-    allocation_method   = "Static" # Static is required due to the use of the Standard sku
-    sku                 = "Standard" # the Standard sku is required due to the use of availability zones
-    availability_zone   = element(var.azs,count.index)
-
-    tags = {
-        environment = var.environment
-    }
-}
-
-# Setup Onboarding scripts
-data "template_file" "vm_onboard" {
-    template = "${file("${path.module}/onboard.tpl")}"
-
-    vars = {
-        uname       = var.admin_username
-        # replace this with a reference to the secret id 
-        upassword   = random_password.password.result
-        DO_URL      = var.DO_URL
-        AS3_URL     = var.AS3_URL
-        TS_URL      = var.TS_URL
-        libs_dir    = var.libs_dir
-        onboard_log = var.onboard_log
     }
 }
